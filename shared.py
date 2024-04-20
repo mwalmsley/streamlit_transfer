@@ -122,3 +122,23 @@ def show_galaxy_table(galaxies, max_display_galaxies):
             unsafe_allow_html=True
         )
         st.markdown(r'Galaxy ID is formatted like {brickid}\_{objid} in DESI-LS DR8. Crossmatch to DESI-LS DR8 with 8000\_{brickid}\_{objid}')
+
+
+def add_important_notes_expander():
+    with st.expander('Important Notes'):
+        st.markdown(
+            """
+            Which galaxies are included?
+            - Galaxies must be between r-mag 14.0 and 19 (the SDSS spectroscopic limit).
+            - Galaxies must be extended enough to be included in Galaxy Zoo (roughly, petrosian radius > 3 arcseconds)
+            - Galaxies must be in the DECaLS DR8 sky area. A sky area chart will display if the target coordinates are far outside.
+            
+            What are the machine learning limitations?
+            - The underlying model does not receive colour information to avoid bias. Colour grz images are shown for illustration only.
+            - The underlying model is likely to perform better with "macro" morphology (e.g. disturbances, rings, etc.) than small anomalies in otherwise normal galaxies (e.g. supernovae, Voorwerpen, etc.)
+            - Finding no similar galaxies does not imply there are none.
+            
+            Please see the paper (in prep.) for more details.
+            """
+        )
+    st.text(" \n")

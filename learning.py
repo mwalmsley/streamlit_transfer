@@ -70,13 +70,13 @@ def run_active_learning_iteration(batch_size, df, tree:cKDTree=None, max_tree_se
     )
 
     print('querying learner')
-    query_index, query_instance = learner.query(X_pool)
-    # print(query_index)
+    query_indices, query_instances = learner.query(X_pool)
+    return query_indices, learner
 
-    df.loc[query_index, 'has_label'] = True
-    df.loc[query_index, 'label'] = df.loc[query_index].apply(get_dummy_label, axis=1)
-
-    return df, learner
+def dummy_label_query_indices(query_indices, df):
+    df.loc[query_indices, 'has_label'] = True
+    df.loc[query_indices, 'label'] = df.loc[query_indices].apply(get_dummy_label, axis=1)
+    return df
 
 def get_dummy_label(galaxy):
     return int(galaxy['feat_pca_0'] > 0)

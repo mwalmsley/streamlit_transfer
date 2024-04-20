@@ -3,13 +3,13 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 
-
 import shared
 import learning
 
 
-def show_galaxies(galaxies, max_display_galaxies=6):
+def show_galaxies(df, indices, max_display_galaxies=6):
 
+    galaxies = df.loc[indices]
     galaxies = galaxies[:max_display_galaxies]
     
     galaxies['url'] = list(galaxies.apply(shared.get_url, axis=1))
@@ -17,21 +17,30 @@ def show_galaxies(galaxies, max_display_galaxies=6):
     st.header('Similar Galaxies')
 
     toggles = []
+    n_cols = 3
+    n_rows = len(galaxies) // n_cols
     with st.form(key='label_form', clear_on_submit=True):
-        n_cols = 3
-        n_rows = len(galaxies) // n_cols + 1
         for row_i in range(0, n_rows):
             row_columns = st.columns(n_cols)
             for col_i in range(n_cols):
-                galaxy_n = n_cols*row_i+col_i
+                image_n = (row_i*n_cols) + col_i
+                galaxy_index = galaxies.index[image_n]
                 if n_cols*row_i+col_i < len(galaxies):
                     col = row_columns[col_i]
-                    col.image(galaxies.iloc[galaxy_n]['url'],)
-                    toggles.append(col.toggle(f'test_{galaxy_n}', False))
-        submitted = st.form_submit_button('Submit labels')
-        if submitted:
-            st.write(toggles)
+                    col.image(galaxies.loc[galaxy_index, 'url'])
+                    toggles.append(col.toggle(f'test_{galaxy_index}', False))
+        submitted = st.form_submit_button('Submit labels') # , on_click=add_labels_to_session_state, args=(indices, toggles))
 
+    if submitted:
+        add_labels_to_session_state(indices, toggles)
+        st.rerun()
+
+
+def add_labels_to_session_state(indices, toggles):
+    print('record positions of all toggles')
+    for galaxy_index, toggle in zip(indices, toggles):
+        st.session_state['labels'][int(galaxy_index)] = int(toggle)
+    print(st.session_state['labels'])
 
     # shared.show_galaxy_table(galaxies, max_display_galaxies)
     # st.text(" \n")
@@ -65,9 +74,60 @@ def show_query_galaxy(galaxy):
 def main():
 
     st.title('Similarity Search')
-    st.subheader('by Mike Walmsley ([@mike\_walmsley\_](https://twitter.com/mike_walmsley_))')
-    st.text(" \n")
+    st.subheader('by [Mike Walmsley](walmsley.dev)')
+    st.text("\n")
 
+    st.info(st.session_state.get('labels', {}))
+    
+    shared.add_important_notes_expander()
+
+    ra, dec = user_coordinate_input()
+
+    with st.spinner('Loading representation, please wait'):
+        # essentially all the delay
+        # do this after rendering the inputs, so user has something to look at
+        df, _ = shared.prepare_data()
+        # display when ready
+        go = st.button('Cross-match')
+        
+    # avoid doing a new search whenever ra OR dec changes, usually people would change both together
+    if go:
+
+        with st.spinner(f'Cross-matching galaxy'):
+
+            st.session_state['labels'] = {}  # wipe labels, start fresh
+            
+            coordinate_query = np.array([ra, dec]).reshape((1, -1))
+            separation, best_index = shared.find_neighbours_from_query(df[['ra', 'dec']], coordinate_query)  # n_neigbours=1
+
+            shared.separation_warning(separation)
+
+            query_galaxy = df.iloc[best_index]
+
+            show_query_galaxy(query_galaxy)
+
+            # wipe label state and set this galaxy (only) as true label
+            st.session_state['labels'][int(best_index)] = 1
+
+
+    st.header('Galaxies to label')
+
+    # load current labels
+    df['has_label'] = False
+    df['label'] = np.nan
+    # print(df.loc[1478084])
+    for label_index, label in st.session_state.get('labels', {}).items():
+        df.loc[label_index, 'has_label'] = True
+        df.loc[label_index, 'label'] = label
+
+    query_indices, learner = learning.run_active_learning_iteration(batch_size=6, df=df, tree=None)
+
+    st.button('Show galaxies to label')
+
+    # show_galaxies(df, [0, 1, 2, 3, 4, 5], max_display_galaxies=6)
+    show_galaxies(df, query_indices, max_display_galaxies=6)
+
+def user_coordinate_input():
     ra = float(st.text_input('RA (deg)', key='ra', help='Right Ascension of galaxy to search (in degrees)', value='184.6750'))
     dec = float(st.text_input('Dec (deg)', key='dec', help='Declination of galaxy to search (in degrees)', value='11.73181'))
 
@@ -81,60 +141,7 @@ def main():
         ra = float(ra_str)
         dec = float(dec_str)
         st.markdown(f'Using link coordinates: {ra}, {dec}')
-
-    with st.spinner('Loading representation, please wait'):
-        # essentially all the delay
-        # do this after rendering the inputs, so user has something to look at
-        df, features = shared.prepare_data()
-        go = st.button('Cross-match')
-        # st.markdown('Ready to search.')
-
-    with st.expander('Important Notes'):
-        st.markdown(
-            """
-            Which galaxies are included?
-            - Galaxies must be between r-mag 14.0 and 19 (the SDSS spectroscopic limit).
-            - Galaxies must be extended enough to be included in Galaxy Zoo (roughly, petrosian radius > 3 arcseconds)
-            - Galaxies must be in the DECaLS DR8 sky area. A sky area chart will display if the target coordinates are far outside.
-            
-            What are the machine learning limitations?
-            - The underlying model does not receive colour information to avoid bias. Colour grz images are shown for illustration only.
-            - The underlying model is likely to perform better with "macro" morphology (e.g. disturbances, rings, etc.) than small anomalies in otherwise normal galaxies (e.g. supernovae, Voorwerpen, etc.)
-            - Finding no similar galaxies does not imply there are none.
-            
-            Please see the paper (in prep.) for more details.
-            """
-        )
-    st.text(" \n")
-
-
-
-    # avoid doing a new search whenever ra OR dec changes, usually people would change both together
-    if go:
-
-        with st.spinner(f'Cross-matching galaxy'):
-            
-            coordinate_query = np.array([ra, dec]).reshape((1, -1))
-            separation, best_index = shared.find_neighbours_from_query(df[['ra', 'dec']], coordinate_query)  # n_neigbours=1
-
-            shared.separation_warning(separation)
-
-            query_galaxy = df.iloc[best_index]
-
-            show_query_galaxy(query_galaxy)
-
-            # wipe label state and set this galaxy (only) as true label
-            st.session_state['labels'] = [(best_index, 1)]
-            
-        st.header('Galaxies to label')
-
-        st.button('Show galaxies to label')
-
-        show_galaxies(df, max_display_galaxies=6)
-
-        # df.loc[best_index, 'has_label'] = True
-        # df.loc[best_index, 'label'] = 1
-
+    return ra,dec
 
 
 st.set_page_config(
