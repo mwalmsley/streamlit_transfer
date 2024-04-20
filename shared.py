@@ -18,8 +18,7 @@ def prepare_data():
 
     return df, features
 
-# @st.cache_data(persist='disk', max_entries=1)
-@st.cache_resource  # safe as never modified
+@st.cache_data  # changed to data as df is now modified
 def load_catalog(num_components=10):
     columns = ['galaxy_id', 'ra', 'dec', 'estimated_radius'] + [f'feat_pca_{n}' for n in range(num_components)]
 

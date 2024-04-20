@@ -5,25 +5,47 @@ import pandas as pd
 
 
 import shared
+import learning
 
 
-def show_galaxies(galaxies, max_display_galaxies=18):
+def show_galaxies(galaxies, max_display_galaxies=6):
+
+    galaxies = galaxies[:max_display_galaxies]
     
     galaxies['url'] = list(galaxies.apply(shared.get_url, axis=1))
 
-    shared.show_galaxy_table(galaxies, max_display_galaxies)
-    st.text(" \n")
+    st.header('Similar Galaxies')
 
-    opening_html = '<div style=display:flex;flex-wrap:wrap>'
-    closing_html = '</div>'
-    child_html = ['<img src="{}" style=margin:3px;width:200px;></img>'.format(url) for url in galaxies['url'][:max_display_galaxies]]
+    toggles = []
+    with st.form(key='label_form', clear_on_submit=True):
+        n_cols = 3
+        n_rows = len(galaxies) // n_cols + 1
+        for row_i in range(0, n_rows):
+            row_columns = st.columns(n_cols)
+            for col_i in range(n_cols):
+                galaxy_n = n_cols*row_i+col_i
+                if n_cols*row_i+col_i < len(galaxies):
+                    col = row_columns[col_i]
+                    col.image(galaxies.iloc[galaxy_n]['url'],)
+                    toggles.append(col.toggle(f'test_{galaxy_n}', False))
+        submitted = st.form_submit_button('Submit labels')
+        if submitted:
+            st.write(toggles)
 
-    gallery_html = opening_html
-    for child in child_html:
-        gallery_html += child
-    gallery_html += closing_html
 
-    st.markdown(gallery_html, unsafe_allow_html=True)
+    # shared.show_galaxy_table(galaxies, max_display_galaxies)
+    # st.text(" \n")
+
+    # opening_html = '<div style=display:flex;flex-wrap:wrap>'
+    # closing_html = '</div>'
+    # child_html = ['<img src="{}" style=margin:3px;width:200px;></img>'.format(url) for url in galaxies['url'][:max_display_galaxies]]
+
+    # gallery_html = opening_html
+    # for child in child_html:
+    #     gallery_html += child
+    # gallery_html += closing_html
+
+    # st.markdown(gallery_html, unsafe_allow_html=True)
 
 
 def show_query_galaxy(galaxy):
@@ -64,8 +86,7 @@ def main():
         # essentially all the delay
         # do this after rendering the inputs, so user has something to look at
         df, features = shared.prepare_data()
-        print('data ready')
-        go = st.button('Search')
+        go = st.button('Cross-match')
         # st.markdown('Ready to search.')
 
     with st.expander('Important Notes'):
@@ -91,29 +112,29 @@ def main():
     # avoid doing a new search whenever ra OR dec changes, usually people would change both together
     if go:
 
-        with st.spinner(f'Searching {len(df)} galaxies.'):
+        with st.spinner(f'Cross-matching galaxy'):
             
             coordinate_query = np.array([ra, dec]).reshape((1, -1))
             separation, best_index = shared.find_neighbours_from_query(df[['ra', 'dec']], coordinate_query)  # n_neigbours=1
-            # print('crossmatched')
 
             shared.separation_warning(separation)
-        
-            neighbour_indices = shared.find_neighbours_from_index(features, best_index)
-            assert neighbour_indices[0] == best_index  # should find itself
 
             query_galaxy = df.iloc[best_index]
-            neighbours = df.iloc[neighbour_indices[1:]]
 
-            # exclude galaxies very very close to the original
-            # sometimes catalog will record one extended galaxy as multiple sources
-            nontrivial_neighbours = shared.get_nontrivial_neighbours(query_galaxy, neighbours)
+            show_query_galaxy(query_galaxy)
 
-        show_query_galaxy(query_galaxy)
-        
-        st.header('Similar Galaxies')
+            # wipe label state and set this galaxy (only) as true label
+            st.session_state['labels'] = [(best_index, 1)]
+            
+        st.header('Galaxies to label')
 
-        show_galaxies(nontrivial_neighbours, max_display_galaxies=18)
+        st.button('Show galaxies to label')
+
+        show_galaxies(df, max_display_galaxies=6)
+
+        # df.loc[best_index, 'has_label'] = True
+        # df.loc[best_index, 'label'] = 1
+
 
 
 st.set_page_config(
